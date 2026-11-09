@@ -1,4 +1,4 @@
-# epanet-js
+epanet-js repo copy
 
 > ⚠️ **License notice:** This project is under the Functional Source License (FSL-1.1-MIT). You can use and contribute freely for personal, research, and internal purposes. Commercial or competing uses are **not allowed** until a commit transitions to MIT after two years. If you work for a commercial entity, consult your legal team before downloading, viewing or adapting this code - [learn more](#before-you-use-or-view-this-code).
 
