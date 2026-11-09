@@ -1,0 +1,23 @@
+{
+  "name": "epanet-js OSM (sans token)",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:24-bookworm",
+  "features": {
+    "ghcr.io/devcontainers-contrib/features/pnpm:2": {
+      "version": "9.15.9"
+    }
+  },
+  "portsAttributes": {
+    "3000": {
+      "label": "epanet-js",
+      "onAutoForward": "openPreview"
+    }
+  },
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends libpixman-1-dev libcairo2-dev libpango1.0-dev libgif-dev && pnpm install --frozen-lockfile",
+  "postStartCommand": "echo 'Lance : pnpm --filter @epanet-js/app dev'",
+  "customizations": {
+    "vscode": {
+      "extensions": ["bradlc.vscode-tailwindcss", "dbaeumer.vscode-eslint"]
+    }
+  },
+  "remoteUser": "node"
+}

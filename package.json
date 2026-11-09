@@ -1,0 +1,35 @@
+{
+  "name": "monorepo",
+  "private": true,
+  "packageManager": "pnpm@9.15.9",
+  "scripts": {
+    "check-types": "turbo run check-types",
+    "lint": "turbo run lint",
+    "test": "turbo run test"
+  },
+  "engines": {
+    "node": "24.x",
+    "pnpm": ">=9.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "canvas"
+    ],
+    "overrides": {
+      "@deck.gl/core": "9.1.13",
+      "@deck.gl/layers": "9.1.13",
+      "@deck.gl/extensions": "9.1.13",
+      "@deck.gl/mapbox": "9.1.13",
+      "@deck.gl/geo-layers": "9.1.13",
+      "@deck.gl/mesh-layers": "9.1.13",
+      "@luma.gl/core": "~9.1.0",
+      "@luma.gl/engine": "~9.1.0",
+      "@luma.gl/shadertools": "~9.1.0",
+      "@luma.gl/webgl": "~9.1.0",
+      "@luma.gl/constants": "~9.1.0"
+    }
+  },
+  "devDependencies": {
+    "turbo": "^2.9.16"
+  }
+}

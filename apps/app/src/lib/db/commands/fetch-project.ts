@@ -1,0 +1,218 @@
+import type { ProjectSettings } from "@epanet-js/project-settings";
+import type { CustomAttributesDefinition } from "@epanet-js/hydraulic-model";
+import type { Zones } from "@epanet-js/hydraulic-model";
+import type { Bookmark, SelectionSet } from "src/lib/collections";
+import {
+  defaultSimulationSettings,
+  type SimulationSettings,
+} from "src/simulation/simulation-settings";
+import { HydraulicModel, initializeHydraulicModel } from "src/hydraulic-model";
+import {
+  ModelFactories,
+  initializeModelFactories,
+  LabelManager,
+} from "@epanet-js/hydraulic-model";
+import { IdPoolsGenerator, type IdPoolSeeds } from "@epanet-js/id-generator";
+import { getWorker, timed } from "@epanet-js/ejsdb";
+import {
+  buildAssetsData,
+  buildCustomerPointsData,
+  buildPatternsData,
+  buildCurvesData,
+  buildRawControlsData,
+  buildControlsData,
+  buildJunctionDemandsData,
+  buildCustomAttributesDefinition,
+  buildPipeLibraryData,
+  buildProjectSettingsData,
+  buildSimulationSettingsData,
+  buildZonesData,
+} from "@epanet-js/ejsdb-mappers";
+import { buildSelectionSetsData } from "../mappers/selection-sets/builders";
+import { buildBookmarksData } from "../mappers/bookmarks/builders";
+
+export type Project = {
+  projectSettings: ProjectSettings;
+  customAttributes: CustomAttributesDefinition;
+  zones: Zones;
+  selectionSets: SelectionSet[];
+  bookmarks: Bookmark[];
+  hydraulicModel: HydraulicModel;
+  factories: ModelFactories;
+  simulationSettings: SimulationSettings;
+};
+
+export type FetchProjectPhase =
+  | "reading-assets"
+  | "reading-customer-points"
+  | "reading-settings"
+  | "building";
+
+export type FetchProjectOptions = {
+  onProgress?: (phase: FetchProjectPhase) => void;
+};
+
+const buildFactories = (maxima: IdPoolSeeds): ModelFactories =>
+  initializeModelFactories({
+    idPools: new IdPoolsGenerator(maxima),
+    labelManager: new LabelManager(),
+  });
+
+export const fetchProject = async (
+  options: FetchProjectOptions = {},
+): Promise<Project> => {
+  const { onProgress } = options;
+  return timed("fetchProject", async () => {
+    const worker = getWorker();
+
+    onProgress?.("reading-assets");
+    const [
+      junctionsRaw,
+      reservoirsRaw,
+      tanksRaw,
+      pipesRaw,
+      pumpsRaw,
+      valvesRaw,
+    ] = await timed("fetchProject.readAssets", () =>
+      Promise.all([
+        worker.getJunctions(),
+        worker.getReservoirs(),
+        worker.getTanks(),
+        worker.getPipes(),
+        worker.getPumps(),
+        worker.getValves(),
+      ]),
+    );
+
+    onProgress?.("reading-customer-points");
+    const [customerPointsRaw, customerPointDemandsRaw] = await timed(
+      "fetchProject.readCustomerPoints",
+      () =>
+        Promise.all([
+          worker.getCustomerPoints(),
+          worker.getCustomerPointDemands(),
+        ]),
+    );
+
+    onProgress?.("reading-settings");
+    const [
+      settingsJson,
+      pipeLibraryJson,
+      customAttributesJson,
+      zonesRaw,
+      selectionSetsRaw,
+      bookmarksJson,
+      patternsRaw,
+      junctionDemandsRaw,
+      curvesRaw,
+      rawControlsData,
+      controlsData,
+      simulationSettingsData,
+      idMaxima,
+    ] = await timed("fetchProject.readSettings", () =>
+      Promise.all([
+        worker.getProjectSettings(),
+        worker.getPipeLibrary(),
+        worker.getCustomAttributesDefinition(),
+        worker.getZones(),
+        worker.getSelectionSets(),
+        worker.getBookmarks(),
+        worker.getPatterns(),
+        worker.getJunctionDemands(),
+        worker.getCurves(),
+        worker.getRawControls(),
+        worker.getControls(),
+        worker.getSimulationSettings(),
+        worker.getIdPools(),
+      ]),
+    );
+    if (!settingsJson) {
+      throw new Error("Project settings missing");
+    }
+    onProgress?.("building");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return timed(
+      "fetchProject.build",
+      () => {
+        const projectSettings = buildProjectSettingsData(settingsJson);
+        const pipeLibrary = buildPipeLibraryData(pipeLibraryJson);
+        const customAttributes =
+          buildCustomAttributesDefinition(customAttributesJson);
+        const zones = buildZonesData(zonesRaw);
+        const selectionSets = buildSelectionSetsData(selectionSetsRaw);
+        const bookmarks = buildBookmarksData(bookmarksJson);
+
+        const factories = buildFactories(idMaxima);
+        const { idGenerator } = factories;
+
+        const { assets, assetIndex, topology } = buildAssetsData(
+          {
+            junctions: junctionsRaw,
+            reservoirs: reservoirsRaw,
+            tanks: tanksRaw,
+            pipes: pipesRaw,
+            pumps: pumpsRaw,
+            valves: valvesRaw,
+          },
+          factories,
+        );
+        const { customerPoints, customerPointsLookup, customerDemands } =
+          buildCustomerPointsData(
+            {
+              customerPoints: customerPointsRaw,
+              demands: customerPointDemandsRaw,
+            },
+            factories,
+          );
+        const patterns = buildPatternsData(patternsRaw);
+        const curves = buildCurvesData(curvesRaw);
+        const rawControls = buildRawControlsData(rawControlsData);
+        const controls = buildControlsData(controlsData);
+        const simulationSettings = buildSimulationSettingsData(
+          simulationSettingsData,
+          defaultSimulationSettings,
+        );
+        const junctionDemands = buildJunctionDemandsData(junctionDemandsRaw);
+
+        const hydraulicModel = initializeHydraulicModel({
+          idGenerator,
+          assets,
+          assetIndex,
+          topology,
+          customerPoints,
+          customerPointsLookup,
+          patterns,
+          curves,
+          pipeMaterials: pipeLibrary,
+          rawControls,
+          controls,
+          demands: {
+            junctions: junctionDemands,
+            customerPoints: customerDemands,
+          },
+          customAttributes,
+        });
+
+        return {
+          projectSettings,
+          customAttributes,
+          zones,
+          selectionSets,
+          bookmarks,
+          hydraulicModel,
+          factories,
+          simulationSettings,
+        };
+      },
+      {
+        j: junctionsRaw.length,
+        r: reservoirsRaw.length,
+        t: tanksRaw.length,
+        p: pipesRaw.length,
+        pu: pumpsRaw.length,
+        v: valvesRaw.length,
+        cp: customerPointsRaw.length,
+      },
+    );
+  });
+};
